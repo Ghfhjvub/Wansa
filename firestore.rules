@@ -1,122 +1,50 @@
 rules_version = '2';
-
-// قواعد أمان ونسة.
-// معرّف المحادثة = معرّفا المستخدمين مرتبَين أبجدياً ومفصولان بـ "_"،
-// لذلك نعرف أعضاء المحادثة من الـ id نفسه حتى قبل إنشاء المستند.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() {
-      return request.auth != null;
-    }
+    function signedIn() { return request.auth != null; }
+    function isMe(uid) { return signedIn() && request.auth.uid == uid; }
+    // معرّف المحادثة = uidA_uidB، والعضو هو من يظهر معرّفه فيه
+    function inChat(chatId) { return signedIn() && request.auth.uid in chatId.split('_'); }
 
-    function isMember(chatId) {
-      return signedIn() && request.auth.uid in chatId.split('_');
-    }
-
-    function validProfile(d) {
-      return d.name is string && d.name.size() >= 2 && d.name.size() <= 30
-          && d.status is string && d.status.size() <= 60
-          && d.color is string && d.color.size() <= 9
-          && d.lastSeen is timestamp
-          && (!('photo' in d) || (d.photo is string && d.photo.size() <= 70000));
-    }
-
-    // رسالة نص عادية، أو صورة/صوت مخزّنة داخل الرسالة، أو فيديو مقسّم إلى قطع (chunks).
-    function validMsg(d) {
-      let base = ['from', 'text', 'createdAt'];
-      return d.keys().hasAll(base)
-        && d.from == request.auth.uid
-        && d.text is string && d.text.size() <= 2000
-        && d.createdAt == request.time
-        && (
-          (!('type' in d) && d.keys().hasOnly(base) && d.text.size() >= 1)
-          || (d.type in ['image', 'audio']
-              && d.keys().hasOnly(['from', 'text', 'createdAt', 'type', 'data', 'dur', 'w', 'h'])
-              && d.data is string && d.data.size() <= 760000)
-          || (d.type == 'video'
-              && d.keys().hasOnly(['from', 'text', 'createdAt', 'type', 'chunks', 'mime', 'size', 'dur', 'w', 'h'])
-              && d.chunks is number && d.chunks >= 1 && d.chunks <= 40
-              && d.mime is string && d.mime.size() <= 60)
-        );
-    }
-
-    // ---------- الملفات الشخصية ----------
-    // يُسمح بقراءة ملف واحد إذا عرفت معرّفه، ولا يُسمح بسرد كل المستخدمين.
+    // الملفات الشخصية: يقرؤها أي مستخدم مسجّل، ويكتب كلٌّ ملفه فقط
     match /users/{uid} {
-      allow get: if signedIn();
+      allow read: if signedIn();
+      allow create: if isMe(uid)
+        && request.resource.data.email == request.auth.token.email.lower();
+      allow update: if isMe(uid)
+        && request.resource.data.email == resource.data.email;
+    }
 
+    // فهرس البريد -> uid للبحث عن الأصدقاء. يُنشأ مرة واحدة ببريدك المُتحقَّق منه فقط
+    match /emails/{email} {
+      allow get: if signedIn();
+      allow list: if false;
       allow create: if signedIn()
-        && request.auth.uid == uid
-        && request.auth.token.phone_number != null
-        && ('+' + request.resource.data.phone) == request.auth.token.phone_number
-        && request.resource.data.keys().hasOnly(['name', 'phone', 'color', 'status', 'photo', 'createdAt', 'lastSeen'])
-        && request.resource.data.createdAt == request.time
-        && validProfile(request.resource.data);
-
-      allow update: if signedIn()
-        && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['name', 'phone', 'color', 'status', 'photo', 'createdAt', 'lastSeen'])
-        && request.resource.data.phone == resource.data.phone
-        && request.resource.data.createdAt == resource.data.createdAt
-        && validProfile(request.resource.data);
-
-      allow delete: if false;
-    }
-
-    // ---------- فهرس الأرقام: رقم الجوال -> معرّف المستخدم ----------
-    // لا يمكن كتابته إلا لمن أثبت ملكية الرقم برمز الرسالة النصية.
-    match /phones/{digits} {
-      allow get: if signedIn();
-
-      allow create, update: if signedIn()
-        && request.auth.token.phone_number == ('+' + digits)
-        && request.resource.data.keys().hasOnly(['uid'])
+        && request.auth.token.email_verified == true
+        && email == request.auth.token.email.lower()
         && request.resource.data.uid == request.auth.uid;
-
-      allow delete: if false;
+      allow update, delete: if false;
     }
 
-    // ---------- المحادثات ----------
     match /chats/{chatId} {
-      allow get: if isMember(chatId);
-
+      allow get: if inChat(chatId);
       allow list: if signedIn() && request.auth.uid in resource.data.members;
-
-      allow create: if isMember(chatId)
-        && chatId.split('_').size() == 2
-        && chatId.split('_')[0] != chatId.split('_')[1]
+      allow create: if inChat(chatId)
         && request.resource.data.members.size() == 2
-        && request.resource.data.members.hasAll(chatId.split('_'))
-        && request.resource.data.keys().hasOnly(['members', 'createdAt', 'lastMessage', 'lastTs', 'unread', 'reads'])
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.lastMessage.from == request.auth.uid;
-
-      // العضو يحدّث فقط: آخر رسالة، وقت آخر رسالة، عدّادات غير المقروء، أوقات القراءة.
-      allow update: if isMember(chatId)
-        && request.resource.data.members == resource.data.members
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['lastMessage', 'lastTs', 'unread', 'reads'])
-        && (!('lastMessage' in request.resource.data.diff(resource.data).affectedKeys())
-            || request.resource.data.lastMessage.from == request.auth.uid);
-
-      allow delete: if false;
+        && request.auth.uid in request.resource.data.members
+        && chatId == request.resource.data.members[0] + '_' + request.resource.data.members[1];
+      allow update: if inChat(chatId) && request.auth.uid in resource.data.members;
 
       match /messages/{msgId} {
-        allow read: if isMember(chatId);
-
-        allow create: if isMember(chatId) && validMsg(request.resource.data);
-
-        // الرسائل لا تُعدَّل ولا تُحذف من العميل.
+        allow read: if inChat(chatId);
+        allow create: if inChat(chatId) && request.resource.data.from == request.auth.uid;
         allow update, delete: if false;
 
-        // قطع الفيديو: تُكتب قبل الرسالة نفسها، ويقرأها طرفا المحادثة فقط.
-        match /chunks/{n} {
-          allow read: if isMember(chatId);
-          allow create: if isMember(chatId)
-            && request.resource.data.keys().hasOnly(['d'])
-            && request.resource.data.d is string
-            && request.resource.data.d.size() <= 760000;
+        // أجزاء الفيديو
+        match /chunks/{chunkId} {
+          allow read: if inChat(chatId);
+          allow create: if inChat(chatId);
           allow update, delete: if false;
         }
       }

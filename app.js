@@ -1,11 +1,11 @@
 import {
   configured, auth, db,
-  RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, signOut,
+  GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut,
   doc, getDoc, getDocs, updateDoc, collection, query, where, orderBy, limitToLast,
   onSnapshot, writeBatch, serverTimestamp, increment
 } from './firebase.js';
 import {
-  COUNTRIES, COLORS, latin, esc, hm, dayLabel, listTime, seenLabel, initial, fmtFull, checkNumber, pad
+  COLORS, latin, esc, hm, dayLabel, listTime, seenLabel, initial, normEmail, validEmail, pad
 } from './util.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -15,7 +15,7 @@ const isTouch = () => window.matchMedia('(pointer:coarse)').matches;
 
 /* ---------- state ---------- */
 const S = {
-  uid: null, phone: '', me: null,
+  uid: null, email: '', me: null,
   chats: new Map(),            // chatId -> chat document
   people: new Map(),           // uid -> user document (live)
   peopleUnsubs: new Map(),
@@ -31,10 +31,7 @@ const VID = new Map();         // معرّف رسالة الفيديو -> راب
 const VIDLOAD = new Set();
 const MAX_VIDEO = 15 * 1024 * 1024;
 const CHUNK = 700000;          // حجم القطعة (أحرف base64) تحت حد 1MB للمستند
-const A = { country: 0, full: '', color: COLORS[0], timer: null, left: 0 };
-let verifier = null;
-let confirmation = null;
-let verifying = false;
+const A = { color: COLORS[0] };
 
 /* ---------- views + small UI helpers ---------- */
 function view(name) {
@@ -54,148 +51,50 @@ function busy(btn, on) {
   if (!btn.matches('#resend')) btn.disabled = on;
 }
 const AUTH_ERR = {
-  'auth/invalid-phone-number': 'رقم الجوال غير صالح. راجع الرقم والدولة.',
-  'auth/missing-phone-number': 'اكتب رقم الجوال.',
   'auth/too-many-requests': 'محاولات كثيرة. انتظر قليلاً ثم حاول من جديد.',
-  'auth/quota-exceeded': 'تم تجاوز حد الرسائل النصية لهذا المشروع. حاول لاحقاً.',
-  'auth/captcha-check-failed': 'فشل التحقق الأمني. أعد تحميل الصفحة وحاول مرة ثانية.',
-  'auth/invalid-verification-code': 'الرمز غير صحيح. راجع الرسالة وحاول مرة ثانية.',
-  'auth/code-expired': 'انتهت صلاحية الرمز. اطلب رمزاً جديداً.',
   'auth/network-request-failed': 'تعذر الاتصال بالإنترنت. تحقق من الشبكة.',
-  'auth/operation-not-allowed': 'الدخول برقم الجوال غير مفعّل، أو دولتك غير مسموحة في إعدادات Firebase.',
-  'auth/billing-not-enabled': 'إرسال الرسائل النصية يحتاج تفعيل الفوترة في مشروع Firebase.',
-  'auth/unauthorized-domain': 'هذا النطاق غير مضاف إلى النطاقات المصرّح بها في Firebase Authentication.'
+  'auth/operation-not-allowed': 'الدخول بحساب Google غير مفعّل. فعّله من Firebase ثم Authentication ثم Sign-in method.',
+  'auth/unauthorized-domain': 'هذا النطاق غير مضاف إلى النطاقات المصرّح بها في Firebase Authentication.',
+  'auth/user-disabled': 'هذا الحساب موقوف.',
+  'auth/account-exists-with-different-credential': 'يوجد حساب بنفس البريد بطريقة دخول أخرى.',
+  'auth/web-storage-unsupported': 'المتصفح يمنع التخزين المحلي. فعّل ملفات تعريف الارتباط أو جرّب متصفحاً آخر.'
 };
 function authError(err) {
   console.error(err);
   return AUTH_ERR[err && err.code] || 'حدث خطأ غير متوقع. حاول مرة ثانية.';
 }
 
-/* ---------- phone fields ---------- */
-function fillCountries(sel, index) {
-  sel.innerHTML = COUNTRIES.map((c, i) => '<option value="' + i + '">' + esc(c.n) + ' (+' + c.c + ')</option>').join('');
-  sel.value = String(index || 0);
-}
-function bindPhone(sel, pre, inp) {
-  const sync = () => {
-    const c = COUNTRIES[+sel.value];
-    pre.textContent = '+' + c.c;
-    inp.placeholder = 'X'.repeat(c.max).replace(/(X{3})(?=X)/g, '$1 ');
-  };
-  sel.addEventListener('change', sync);
-  inp.addEventListener('input', () => {
-    const v = latin(inp.value).replace(/[^\d\s]/g, '');
-    if (v !== inp.value) inp.value = v;
-  });
-  sync();
-}
-fillCountries($('#country'), 0);
-bindPhone($('#country'), $('#pre'), $('#phone'));
-fillCountries($('#nCountry'), 0);
-bindPhone($('#nCountry'), $('#nPre'), $('#nPhone'));
-
 /* =====================================================================
-   1) تسجيل الدخول برقم الجوال
+   1) تسجيل الدخول بحساب Google
    ===================================================================== */
 function go(n) {
-  ['s1', 's2', 's3'].forEach((id, i) => { $('#' + id).hidden = (i + 1) !== n; });
-  $$('#steps .seg').forEach((s, i) => { s.classList.toggle('on', i < n); s.classList.toggle('cur', i === n - 1); });
-  const first = n === 1 ? $('#phone') : n === 2 ? $('#otp input') : $('#pName');
-  setTimeout(() => { try { first.focus(); } catch (e) { /* ignore */ } }, 30);
+  $('#s1').hidden = n !== 1; $('#s3').hidden = n !== 2;
+  $$('#steps .seg').forEach((el, i) => { el.classList.toggle('on', i < n); el.classList.toggle('cur', i === n - 1); });
+  if (n === 2) setTimeout(() => { try { $('#pName').focus(); } catch (e) { /* ignore */ } }, 30);
 }
+const googleProvider = () => {
+  const p = new GoogleAuthProvider();
+  p.setCustomParameters({ prompt: 'select_account' });
+  return p;
+};
 
-function makeVerifier() {
-  if (verifier) { try { verifier.clear(); } catch (e) { /* ignore */ } }
-  $('#recaptchaHolder').innerHTML = '<div id="recaptcha"></div>';
-  verifier = new RecaptchaVerifier(auth, 'recaptcha', { size: 'invisible' });
-  return verifier;
-}
-
-function paintResend() {
-  const b = $('#resend');
-  if (A.left > 0) { b.disabled = true; b.textContent = 'إعادة الإرسال بعد 0:' + pad(A.left); }
-  else { b.disabled = false; b.textContent = 'إعادة إرسال الرمز'; }
-}
-function startTimer() {
-  clearInterval(A.timer);
-  A.left = 30; paintResend();
-  A.timer = setInterval(() => { A.left--; paintResend(); if (A.left <= 0) clearInterval(A.timer); }, 1000);
-}
-
-async function sendCode(fromResend) {
-  const btn = fromResend ? $('#resend') : $('#s1 button[type=submit]');
-  $('#e1').textContent = ''; $('#e2').textContent = '';
+$('#s1').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('#s1 button[type=submit]');
+  $('#e1').textContent = '';
   busy(btn, true);
   try {
-    confirmation = await signInWithPhoneNumber(auth, '+' + A.full, makeVerifier());
-    $('#sentTo').textContent = fmtFull(A.full);
-    clearOtp(); startTimer(); go(2);
-  } catch (err) {
-    (fromResend ? $('#e2') : $('#e1')).textContent = authError(err);
-  } finally {
-    busy(btn, false);
-    if (fromResend) paintResend();
-  }
-}
-
-$('#s1').addEventListener('submit', e => {
-  e.preventDefault();
-  const idx = +$('#country').value;
-  const r = checkNumber(COUNTRIES[idx], $('#phone').value);
-  $('#e1').textContent = r.ok ? '' : r.error;
-  if (!r.ok) return;
-  A.country = idx; A.full = r.full;
-  sendCode(false);
-});
-$('#editNum').addEventListener('click', () => { clearInterval(A.timer); go(1); });
-$('#resend').addEventListener('click', () => sendCode(true));
-
-const otp = $$('#otp input');
-const otpValue = () => otp.map(i => i.value).join('');
-function clearOtp() { otp.forEach(i => { i.value = ''; }); $('#otp').classList.remove('bad'); }
-
-async function verifyCode() {
-  if (verifying) return;
-  const v = otpValue();
-  if (v.length < 6) { $('#e2').textContent = 'اكتب الرمز كاملاً، 6 أرقام.'; return; }
-  if (!confirmation) { $('#e2').textContent = 'اطلب رمزاً جديداً أولاً.'; return; }
-  const btn = $('#s2 button[type=submit]');
-  verifying = true; $('#e2').textContent = ''; busy(btn, true);
-  try {
-    await confirmation.confirm(v);
+    await signInWithPopup(auth, googleProvider());
     // عند النجاح يتولى onAuthStateChanged نقل المستخدم للشاشة التالية
   } catch (err) {
-    $('#e2').textContent = authError(err);
-    const box = $('#otp');
-    box.classList.add('bad'); box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake');
-    setTimeout(() => { otp.forEach(i => { i.value = ''; }); otp[0].focus(); }, 450);
-  } finally {
-    verifying = false; busy(btn, false);
-  }
-}
-otp.forEach((el, i) => {
-  el.addEventListener('input', () => {
-    const v = latin(el.value).replace(/\D/g, '');
-    el.value = v.slice(-1);
-    $('#otp').classList.remove('bad');
-    if (v && i < 5) otp[i + 1].focus();
-    if (otpValue().length === 6) verifyCode();
-  });
-  el.addEventListener('keydown', e => {
-    if (e.key === 'Backspace' && !el.value && i > 0) { otp[i - 1].focus(); otp[i - 1].value = ''; }
-    else if (e.key === 'ArrowLeft' && i > 0) { e.preventDefault(); otp[i - 1].focus(); }
-    else if (e.key === 'ArrowRight' && i < 5) { e.preventDefault(); otp[i + 1].focus(); }
-  });
-  el.addEventListener('focus', () => el.select());
-  el.addEventListener('paste', e => {
-    e.preventDefault();
-    const t = latin((e.clipboardData || window.clipboardData).getData('text')).replace(/\D/g, '').slice(0, 6);
-    t.split('').forEach((ch, k) => { otp[k].value = ch; });
-    otp[Math.min(t.length, 5)].focus();
-    if (t.length === 6) verifyCode();
-  });
+    const code = err && err.code;
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') { /* أغلق النافذة، لا خطأ */ }
+    else if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+      try { await signInWithRedirect(auth, googleProvider()); return; }
+      catch (e2) { $('#e1').textContent = authError(e2); }
+    } else $('#e1').textContent = authError(err);
+  } finally { busy(btn, false); }
 });
-$('#s2').addEventListener('submit', e => { e.preventDefault(); verifyCode(); });
 
 /* الملف الشخصي (للحسابات الجديدة فقط) */
 const sw = $('#swatches');
@@ -223,10 +122,10 @@ $('#s3').addEventListener('submit', async e => {
     const userRef = doc(db, 'users', uid);
     const batch = writeBatch(db);
     batch.set(userRef, {
-      name, phone: S.phone, color: A.color, status: $('#pStatus').value.trim(),
+      name, email: S.email, color: A.color, status: $('#pStatus').value.trim(),
       createdAt: serverTimestamp(), lastSeen: serverTimestamp()
     });
-    batch.set(doc(db, 'phones', S.phone), { uid }); // فهرس للبحث عن الأصدقاء بالرقم
+    batch.set(doc(db, 'emails', S.email), { uid }); // فهرس للبحث عن الأصدقاء بالبريد
     await batch.commit();
     const snap = await getDoc(userRef);
     S.me = snap.data();
@@ -239,22 +138,28 @@ $('#s3').addEventListener('submit', async e => {
 
 /* حالة الدخول: المصدر الوحيد لتحديد الشاشة */
 function bootAuth() {
+  // رجوع من تسجيل الدخول بالتحويل (يُستخدم عند حجب النافذة المنبثقة)
+  getRedirectResult(auth).catch(err => {
+    view('auth'); go(1); $('#e1').textContent = authError(err);
+  });
   onAuthStateChanged(auth, async user => {
     if (!user) {
       teardown();
-      S.uid = null; S.me = null;
-      confirmation = null;
-      $('#phone').value = ''; $('#pName').value = ''; $('#pStatus').value = '';
-      A.color = COLORS[0]; paintProfile(); clearOtp();
+      S.uid = null; S.me = null; S.email = '';
+      $('#pName').value = ''; $('#pStatus').value = '';
+      A.color = COLORS[0]; paintProfile();
       view('auth'); go(1);
       return;
     }
     S.uid = user.uid;
-    S.phone = (user.phoneNumber || '').replace('+', '');
+    S.email = normEmail(user.email);
     try {
       const snap = await getDoc(doc(db, 'users', user.uid));
       if (snap.exists()) { S.me = snap.data(); startApp(); }
-      else { clearInterval(A.timer); view('auth'); go(3); paintProfile(); }
+      else {
+        $('#pName').value = (user.displayName || '').trim().slice(0, 30);
+        view('auth'); go(2); paintProfile();
+      }
     } catch (err) {
       console.error(err);
       view('auth'); go(1);
@@ -318,16 +223,15 @@ function items() {
 function renderList() {
   if (!S.uid) return;
   const q = latin($('#q').value).trim().toLowerCase();
-  const qd = q.replace(/\D/g, '');
   const list = items().filter(it => {
     if (!q) return true;
     const p = person(it.other);
     const last = it.chat && it.chat.lastMessage ? String(it.chat.lastMessage.text).toLowerCase() : '';
-    return (p && String(p.name).toLowerCase().includes(q)) || (qd && p && p.phone && p.phone.includes(qd)) || last.includes(q);
+    return (p && String(p.name).toLowerCase().includes(q)) || (p && p.email && String(p.email).includes(q)) || last.includes(q);
   });
   const ul = $('#chats');
   if (!list.length) {
-    ul.innerHTML = '<li class="no-res">' + (q ? 'لا توجد نتائج لهذا البحث.' : 'لا توجد محادثات بعد. اضغط + وابدأ بإضافة رقم صديق.') + '</li>';
+    ul.innerHTML = '<li class="no-res">' + (q ? 'لا توجد نتائج لهذا البحث.' : 'لا توجد محادثات بعد. اضغط + وابدأ بإضافة بريد صديق.') + '</li>';
     return;
   }
   ul.innerHTML = list.map(it => {
@@ -365,7 +269,7 @@ function renderThread(force) {
   st.className = 'st';
   if (isOnline(p)) { st.textContent = 'متصل الآن'; st.classList.add('on'); }
   else if (p && p.lastSeen) st.textContent = seenLabel(millis(p.lastSeen));
-  else st.textContent = p && p.phone ? fmtFull(p.phone) : '';
+  else st.textContent = p && p.email ? p.email : '';
 
   const chat = S.chats.get(S.activeId);
   const theirRead = chat && chat.reads && chat.reads[o] ? millis(chat.reads[o]) : 0;
@@ -790,7 +694,6 @@ function beat() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.uid) { beat(); markRead(); } });
 
 function startApp() {
-  clearInterval(A.timer);
   view('app');
   renderMe();
   S.chats = new Map(); S.autoOpened = false;
@@ -851,28 +754,25 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') $$('.overlay').forEach(ov => { if (!ov.hidden) closeOv(ov); });
 });
 
-/* محادثة جديدة: نبحث عن الرقم في فهرس phones */
+/* محادثة جديدة: نبحث عن البريد في فهرس emails */
 function openNew() {
-  const idx = A.country || 0;
-  $('#nCountry').value = String(idx);
-  $('#nCountry').dispatchEvent(new Event('change'));
-  $('#nPhone').value = ''; $('#eN').textContent = ''; $('#inviteBtn').hidden = true;
-  openOv($('#ovNew'), '#nPhone');
+  $('#nEmail').value = ''; $('#eN').textContent = ''; $('#inviteBtn').hidden = true;
+  openOv($('#ovNew'), '#nEmail');
 }
 $('#newBtn').addEventListener('click', openNew);
 $('#newBtn2').addEventListener('click', openNew);
 $('#newForm').addEventListener('submit', async e => {
   e.preventDefault();
-  const r = checkNumber(COUNTRIES[+$('#nCountry').value], $('#nPhone').value);
+  const email = normEmail($('#nEmail').value);
   $('#inviteBtn').hidden = true;
-  if (!r.ok) { $('#eN').textContent = r.error; return; }
-  if (r.full === S.phone) { $('#eN').textContent = 'هذا رقمك أنت. أدخل رقم شخص آخر.'; return; }
+  if (!validEmail(email)) { $('#eN').textContent = 'اكتب بريداً إلكترونياً صحيحاً، مثل name@gmail.com.'; return; }
+  if (email === S.email) { $('#eN').textContent = 'هذا بريدك أنت. أدخل بريد شخص آخر.'; return; }
   const btn = $('#newForm button[type=submit]');
   busy(btn, true); $('#eN').textContent = '';
   try {
-    const snap = await getDoc(doc(db, 'phones', r.full));
+    const snap = await getDoc(doc(db, 'emails', email));
     if (!snap.exists()) {
-      $('#eN').textContent = 'هذا الرقم غير مسجّل في ونسة بعد. ادعُ صاحبه ليسجّل.';
+      $('#eN').textContent = 'هذا البريد غير مسجّل في ونسة بعد. ادعُ صاحبه ليدخل بحساب Google.';
       $('#inviteBtn').hidden = false;
       return;
     }
@@ -885,7 +785,7 @@ $('#newForm').addEventListener('submit', async e => {
     if (!wide()) setTimeout(() => $('#ta').focus(), 80);
   } catch (err) {
     console.error(err);
-    $('#eN').textContent = 'تعذر البحث عن الرقم. تحقق من الاتصال وقواعد Firestore.';
+    $('#eN').textContent = 'تعذر البحث عن البريد. تحقق من الاتصال وقواعد Firestore.';
   } finally { busy(btn, false); }
 });
 $('#inviteBtn').addEventListener('click', async () => {
@@ -900,7 +800,7 @@ $('#inviteBtn').addEventListener('click', async () => {
 $('#meBtn').addEventListener('click', () => {
   paintAv($('#sAv'), S.me.name, S.me.color, S.me.photo);
   $('#avDel').hidden = !okPhoto(S.me.photo);
-  $('#sPhone').textContent = fmtFull(S.phone);
+  $('#sEmail').textContent = S.email;
   $('#sName').value = S.me.name; $('#sStatus').value = S.me.status || ''; $('#eS').textContent = '';
   resetLogout();
   openOv($('#ovSet'), '#sName');

@@ -1,7 +1,7 @@
 // نقطة واحدة لتهيئة Firebase. إصدار الـ SDK مثبّت في الروابط أدناه.
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
-  getAuth, RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, signOut
+  getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -21,7 +21,7 @@ let _db = null;
 if (configured) {
   const app = initializeApp(firebaseConfig);
   _auth = getAuth(app);
-  _auth.languageCode = 'ar'; // رسالة التحقق النصية بالعربية
+  _auth.languageCode = 'ar'; // نافذة Google بالعربية
   try {
     // تخزين محلي لتعمل المحادثات عند انقطاع الاتصال
     _db = initializeFirestore(app, {
@@ -36,7 +36,7 @@ export const auth = _auth;
 export const db = _db;
 
 export {
-  RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, signOut,
+  GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut,
   doc, getDoc, getDocs, updateDoc, collection, query, where, orderBy, limitToLast,
   onSnapshot, writeBatch, serverTimestamp, increment
 };

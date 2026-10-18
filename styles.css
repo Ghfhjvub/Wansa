@@ -292,3 +292,9 @@ bdi{unicode-bidi:isolate}
 @media (prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
 }
+
+/* Google sign-in */
+.btn.google{background:#fff;color:#1f1f1f;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;gap:12px;font-weight:600}
+.btn.google:hover{background:var(--surface-2);filter:none}
+.input.ltr{direction:ltr;text-align:left}
+.input.ltr::placeholder{text-align:left}

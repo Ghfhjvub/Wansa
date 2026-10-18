@@ -33,7 +33,7 @@
     <div class="setup-card">
       <svg aria-hidden="true"><use href="#logo"/></svg>
       <h1>بقيت خطوة واحدة</h1>
-      <p>لم تُضف بيانات مشروع Firebase بعد. افتح الملف <bdi class="num">public/firebase-config.js</bdi> والصق فيه إعدادات تطبيق الويب من لوحة Firebase، ثم أعد تحميل الصفحة.</p>
+      <p>لم تُضف بيانات مشروع Firebase بعد. افتح الملف <bdi class="num">firebase-config.js</bdi> والصق فيه إعدادات تطبيق الويب من لوحة Firebase، ثم أعد تحميل الصفحة.</p>
       <p class="hint">خطوات الإعداد كاملة في ملف README.md.</p>
     </div>
   </section>
@@ -42,8 +42,8 @@
   <section id="auth" class="auth" aria-label="تسجيل الدخول" hidden>
     <div class="panel">
       <div class="logo"><svg aria-hidden="true"><use href="#logo"/></svg><span>ونسة</span></div>
-      <h1>سجّل برقم جوالك، وابدأ الونسة</h1>
-      <p>أدخل رقمك، واكتب الرمز الذي يصلك برسالة نصية، وتفتح لك المحادثات خلال دقيقة.</p>
+      <h1>ادخل بحساب Google، وابدأ الونسة</h1>
+      <p>اضغط على الزر واختر حسابك، وتفتح لك المحادثات خلال دقيقة. بدون كلمات سر ولا رسائل نصية.</p>
       <div class="preview" aria-hidden="true">
         <div class="pb in">السلام عليكم، وصلتي البيت؟<small>18:42</small></div>
         <div class="pb out">وعليكم السلام، وصلت الحمد لله<small>18:43</small></div>
@@ -54,48 +54,20 @@
     <div class="form-wrap">
       <div class="form">
         <div class="steps" id="steps" aria-label="خطوات الدخول">
-          <div class="seg on cur"><i></i><span>الرقم</span></div>
-          <div class="seg"><i></i><span>الرمز</span></div>
+          <div class="seg on cur"><i></i><span>الدخول</span></div>
           <div class="seg"><i></i><span>الملف الشخصي</span></div>
         </div>
 
-        <!-- step 1: phone -->
+        <!-- step 1: Google -->
         <form class="step" id="s1" novalidate>
-          <h2>أدخل رقم جوالك</h2>
-          <p class="sub">سنرسل لك رمز تحقق من 6 أرقام برسالة نصية.</p>
-          <div class="field">
-            <label for="country">الدولة</label>
-            <select id="country" class="input"></select>
-          </div>
-          <div class="field">
-            <label for="phone">رقم الجوال</label>
-            <div class="phone">
-              <span class="pre" id="pre">+249</span>
-              <input id="phone" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="XXX XXX XXX" maxlength="16">
-            </div>
-            <p class="hint">اكتب الرقم بدون الصفر في البداية.</p>
-          </div>
+          <h2>أهلاً بك في ونسة</h2>
+          <p class="sub">ادخل بحساب Google الخاص بك. إن كان لك حساب في ونسة تفتح محادثاتك مباشرة، وإلا ننشئ لك حساباً جديداً.</p>
           <p class="err" id="e1" role="alert"></p>
-          <button class="btn" type="submit">إرسال الرمز</button>
-          <p class="hint">قد تُطبّق رسوم شركة الاتصال على الرسالة النصية. هذا الموقع محمي بخدمة reCAPTCHA من Google.</p>
-        </form>
-
-        <!-- step 2: code -->
-        <form class="step" id="s2" novalidate hidden>
-          <button class="link-btn" type="button" id="editNum">تعديل الرقم</button>
-          <h2>أدخل رمز التحقق</h2>
-          <p class="sub">أرسلنا رمزاً إلى <bdi class="num" id="sentTo"></bdi></p>
-          <div class="otp" id="otp">
-            <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="1" aria-label="الخانة 1">
-            <input type="text" inputmode="numeric" maxlength="1" aria-label="الخانة 2">
-            <input type="text" inputmode="numeric" maxlength="1" aria-label="الخانة 3">
-            <input type="text" inputmode="numeric" maxlength="1" aria-label="الخانة 4">
-            <input type="text" inputmode="numeric" maxlength="1" aria-label="الخانة 5">
-            <input type="text" inputmode="numeric" maxlength="1" aria-label="الخانة 6">
-          </div>
-          <p class="err" id="e2" role="alert"></p>
-          <button class="btn" type="submit">تحقق</button>
-          <button class="link-btn" type="button" id="resend" disabled>إعادة الإرسال بعد 0:30</button>
+          <button class="btn google" type="submit">
+            <svg viewBox="0 0 48 48" width="22" height="22" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7a14.5 14.5 0 0 1 0-9.4l-7.9-6.1a24 24 0 0 0 0 21.6l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.8 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>
+            <span>المتابعة بحساب Google</span>
+          </button>
+          <p class="hint">لن نرسل أي شيء من حسابك. نستخدم اسمك وبريدك فقط ليجدك أصدقاؤك.</p>
         </form>
 
         <!-- step 3: profile (new accounts only) -->
@@ -116,10 +88,9 @@
           </div>
           <p class="err" id="e3" role="alert"></p>
           <button class="btn" type="submit">ابدأ الونسة</button>
-          <button class="link-btn" type="button" id="notMe">هذا ليس رقمي، تسجيل الخروج</button>
+          <button class="link-btn" type="button" id="notMe">هذا ليس حسابي، تسجيل الخروج</button>
         </form>
 
-        <div id="recaptchaHolder"></div>
       </div>
     </div>
   </section>
@@ -136,7 +107,7 @@
       </header>
       <div class="search">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="q" type="search" placeholder="ابحث بالاسم أو الرقم" aria-label="بحث في المحادثات" autocomplete="off">
+        <input id="q" type="search" placeholder="ابحث بالاسم أو البريد" aria-label="بحث في المحادثات" autocomplete="off">
       </div>
       <ul class="chats" id="chats"></ul>
     </aside>
@@ -145,7 +116,7 @@
       <div class="empty" id="empty">
         <svg aria-hidden="true"><use href="#logo"/></svg>
         <h2>اختر محادثة لتبدأ الونسة</h2>
-        <p>أو أضف رقم صديق مسجّل في ونسة وابدأ محادثة جديدة.</p>
+        <p>أو أضف بريد صديق مسجّل في ونسة وابدأ محادثة جديدة.</p>
         <button class="btn small" type="button" id="newBtn2">محادثة جديدة</button>
       </div>
       <div class="thread" id="thread" hidden>
@@ -191,11 +162,9 @@
       <div class="dialog-head"><h2 id="nTitle">محادثة جديدة</h2>
         <button class="icon-btn" type="button" data-close aria-label="إغلاق"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </div>
-      <div class="field"><label for="nCountry">الدولة</label><select id="nCountry" class="input"></select></div>
-      <div class="field"><label for="nPhone">رقم الجوال</label>
-        <div class="phone"><span class="pre" id="nPre">+249</span><input id="nPhone" type="tel" inputmode="numeric" placeholder="XXX XXX XXX" maxlength="16"></div>
-      </div>
-      <p class="hint">يجب أن يكون صاحب الرقم مسجّلاً في ونسة.</p>
+      <div class="field"><label for="nEmail">بريد صديقك على Google</label>
+        <input id="nEmail" class="input ltr" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="name@gmail.com"></div>
+      <p class="hint">يجب أن يكون صاحب البريد قد سجّل دخوله إلى ونسة مرة واحدة على الأقل.</p>
       <p class="err" id="eN" role="alert"></p>
       <button class="btn" type="submit">بدء المحادثة</button>
       <button class="btn ghost" type="button" id="inviteBtn" hidden>نسخ رابط الدعوة</button>
@@ -213,7 +182,7 @@
           <span class="avatar" id="sAv" style="--s:72px">؟</span>
           <span class="cam" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
         </button>
-        <div><div class="lbl">رقم الجوال</div><bdi class="num strong" id="sPhone"></bdi>
+        <div class="who-me"><div class="lbl">البريد الإلكتروني</div><bdi class="num strong" id="sEmail"></bdi>
           <div class="av-actions"><button class="link-btn" type="button" id="sAvPick">تغيير الصورة</button><button class="link-btn danger-t" type="button" id="avDel" hidden>حذف الصورة</button></div>
         </div>
         <input id="avIn" type="file" accept="image/*" hidden>
