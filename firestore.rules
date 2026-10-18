@@ -1,0 +1,101 @@
+rules_version = '2';
+
+// قواعد أمان ونسة.
+// معرّف المحادثة = معرّفا المستخدمين مرتبَين أبجدياً ومفصولان بـ "_"،
+// لذلك نعرف أعضاء المحادثة من الـ id نفسه حتى قبل إنشاء المستند.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(chatId) {
+      return signedIn() && request.auth.uid in chatId.split('_');
+    }
+
+    function validProfile(d) {
+      return d.name is string && d.name.size() >= 2 && d.name.size() <= 30
+          && d.status is string && d.status.size() <= 60
+          && d.color is string && d.color.size() <= 9
+          && d.lastSeen is timestamp;
+    }
+
+    // ---------- الملفات الشخصية ----------
+    // يُسمح بقراءة ملف واحد إذا عرفت معرّفه، ولا يُسمح بسرد كل المستخدمين.
+    match /users/{uid} {
+      allow get: if signedIn();
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.auth.token.phone_number != null
+        && ('+' + request.resource.data.phone) == request.auth.token.phone_number
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'color', 'status', 'createdAt', 'lastSeen'])
+        && request.resource.data.createdAt == request.time
+        && validProfile(request.resource.data);
+
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'color', 'status', 'createdAt', 'lastSeen'])
+        && request.resource.data.phone == resource.data.phone
+        && request.resource.data.createdAt == resource.data.createdAt
+        && validProfile(request.resource.data);
+
+      allow delete: if false;
+    }
+
+    // ---------- فهرس الأرقام: رقم الجوال -> معرّف المستخدم ----------
+    // لا يمكن كتابته إلا لمن أثبت ملكية الرقم برمز الرسالة النصية.
+    match /phones/{digits} {
+      allow get: if signedIn();
+
+      allow create, update: if signedIn()
+        && request.auth.token.phone_number == ('+' + digits)
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+
+      allow delete: if false;
+    }
+
+    // ---------- المحادثات ----------
+    match /chats/{chatId} {
+      allow get: if isMember(chatId);
+
+      allow list: if signedIn() && request.auth.uid in resource.data.members;
+
+      allow create: if isMember(chatId)
+        && chatId.split('_').size() == 2
+        && chatId.split('_')[0] != chatId.split('_')[1]
+        && request.resource.data.members.size() == 2
+        && request.resource.data.members.hasAll(chatId.split('_'))
+        && request.resource.data.keys().hasOnly(['members', 'createdAt', 'lastMessage', 'lastTs', 'unread', 'reads'])
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.lastMessage.from == request.auth.uid;
+
+      // العضو يحدّث فقط: آخر رسالة، وقت آخر رسالة، عدّادات غير المقروء، أوقات القراءة.
+      allow update: if isMember(chatId)
+        && request.resource.data.members == resource.data.members
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['lastMessage', 'lastTs', 'unread', 'reads'])
+        && (!('lastMessage' in request.resource.data.diff(resource.data).affectedKeys())
+            || request.resource.data.lastMessage.from == request.auth.uid);
+
+      allow delete: if false;
+
+      match /messages/{msgId} {
+        allow read: if isMember(chatId);
+
+        allow create: if isMember(chatId)
+          && request.resource.data.keys().hasOnly(['from', 'text', 'createdAt'])
+          && request.resource.data.from == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 2000
+          && request.resource.data.createdAt == request.time;
+
+        // الرسائل لا تُعدَّل ولا تُحذف من العميل.
+        allow update, delete: if false;
+      }
+    }
+  }
+}
