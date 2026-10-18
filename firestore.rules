@@ -18,7 +18,27 @@ service cloud.firestore {
       return d.name is string && d.name.size() >= 2 && d.name.size() <= 30
           && d.status is string && d.status.size() <= 60
           && d.color is string && d.color.size() <= 9
-          && d.lastSeen is timestamp;
+          && d.lastSeen is timestamp
+          && (!('photo' in d) || (d.photo is string && d.photo.size() <= 70000));
+    }
+
+    // رسالة نص عادية، أو صورة/صوت مخزّنة داخل الرسالة، أو فيديو مقسّم إلى قطع (chunks).
+    function validMsg(d) {
+      let base = ['from', 'text', 'createdAt'];
+      return d.keys().hasAll(base)
+        && d.from == request.auth.uid
+        && d.text is string && d.text.size() <= 2000
+        && d.createdAt == request.time
+        && (
+          (!('type' in d) && d.keys().hasOnly(base) && d.text.size() >= 1)
+          || (d.type in ['image', 'audio']
+              && d.keys().hasOnly(['from', 'text', 'createdAt', 'type', 'data', 'dur', 'w', 'h'])
+              && d.data is string && d.data.size() <= 760000)
+          || (d.type == 'video'
+              && d.keys().hasOnly(['from', 'text', 'createdAt', 'type', 'chunks', 'mime', 'size', 'dur', 'w', 'h'])
+              && d.chunks is number && d.chunks >= 1 && d.chunks <= 40
+              && d.mime is string && d.mime.size() <= 60)
+        );
     }
 
     // ---------- الملفات الشخصية ----------
@@ -30,13 +50,13 @@ service cloud.firestore {
         && request.auth.uid == uid
         && request.auth.token.phone_number != null
         && ('+' + request.resource.data.phone) == request.auth.token.phone_number
-        && request.resource.data.keys().hasOnly(['name', 'phone', 'color', 'status', 'createdAt', 'lastSeen'])
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'color', 'status', 'photo', 'createdAt', 'lastSeen'])
         && request.resource.data.createdAt == request.time
         && validProfile(request.resource.data);
 
       allow update: if signedIn()
         && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['name', 'phone', 'color', 'status', 'createdAt', 'lastSeen'])
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'color', 'status', 'photo', 'createdAt', 'lastSeen'])
         && request.resource.data.phone == resource.data.phone
         && request.resource.data.createdAt == resource.data.createdAt
         && validProfile(request.resource.data);
@@ -85,16 +105,20 @@ service cloud.firestore {
       match /messages/{msgId} {
         allow read: if isMember(chatId);
 
-        allow create: if isMember(chatId)
-          && request.resource.data.keys().hasOnly(['from', 'text', 'createdAt'])
-          && request.resource.data.from == request.auth.uid
-          && request.resource.data.text is string
-          && request.resource.data.text.size() >= 1
-          && request.resource.data.text.size() <= 2000
-          && request.resource.data.createdAt == request.time;
+        allow create: if isMember(chatId) && validMsg(request.resource.data);
 
         // الرسائل لا تُعدَّل ولا تُحذف من العميل.
         allow update, delete: if false;
+
+        // قطع الفيديو: تُكتب قبل الرسالة نفسها، ويقرأها طرفا المحادثة فقط.
+        match /chunks/{n} {
+          allow read: if isMember(chatId);
+          allow create: if isMember(chatId)
+            && request.resource.data.keys().hasOnly(['d'])
+            && request.resource.data.d is string
+            && request.resource.data.d.size() <= 760000;
+          allow update, delete: if false;
+        }
       }
     }
   }
