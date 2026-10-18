@@ -8,7 +8,7 @@ import {
   doc, getDoc, getDocs, updateDoc, collection, query, where, orderBy, limitToLast,
   onSnapshot, writeBatch, serverTimestamp, increment
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
-import { firebaseConfig } from '../firebase-config.js';
+import { firebaseConfig } from './firebase-config.js';
 
 export const configured =
   typeof firebaseConfig.apiKey === 'string' &&

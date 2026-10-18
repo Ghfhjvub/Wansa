@@ -234,7 +234,7 @@
   <div class="toast" id="toast" role="status" hidden></div>
 </div>
 
-<script type="module" src="js/app.js"></script>
+<script type="module" src="app.js"></script>
 <script>
 (function () {
   var ready = false, shown = false;
@@ -253,13 +253,13 @@
     sp.appendChild(box);
   }
   function diagnose(why) {
-    var list = ['js/app.js', 'js/firebase.js', 'js/util.js', 'firebase-config.js', 'styles.css'];
+    var list = ['app.js', 'firebase.js', 'util.js', 'firebase-config.js', 'styles.css'];
     Promise.all(list.map(function (f) {
       return fetch(f, { cache: 'no-store' }).then(function (r) { return r.ok ? null : f + ' (خطأ ' + r.status + ')'; })
         .catch(function () { return f + ' (تعذر التحميل)'; });
     })).then(function (res) {
       var bad = res.filter(Boolean);
-      if (bad.length) show('هذه الملفات غير موجودة بجانب index.html على الموقع. ارفع محتويات مجلد public كاملة (بما فيها مجلد js وملف firebase-config.js):', bad);
+      if (bad.length) show('هذه الملفات غير موجودة بجانب index.html على الموقع. ارفع كل ملفات المشروع في نفس المكان بجانب index.html:', bad);
       else show(why || 'الملفات موجودة لكن Firebase لم يبدأ. تحقق من الاتصال بالإنترنت ومن أن النطاق www.gstatic.com غير محجوب، وافتح وحدة التحكم (Console) لرؤية الخطأ.');
     });
   }
